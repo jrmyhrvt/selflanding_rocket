@@ -1,9 +1,14 @@
 import numpy as np
 
+
 class MassModel:
     def __init__(self, dry_mass_kg: float = 500.0, fuel_kg: float = 100.0):
-        self.dry_mass_kg = dry_mass_kg
-        self.fuel_kg = max(0.0, fuel_kg)
+        if dry_mass_kg < 0.0:
+            raise ValueError("dry_mass_kg must be >= 0")
+        if fuel_kg < 0.0:
+            raise ValueError("fuel_kg must be >= 0")
+        self.dry_mass_kg = float(dry_mass_kg)
+        self.fuel_kg = float(max(0.0, fuel_kg))
         self._est_fuel_kg = self.fuel_kg
 
     def total_mass(self) -> float:

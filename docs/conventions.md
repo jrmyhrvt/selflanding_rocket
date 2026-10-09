@@ -19,3 +19,10 @@ Quaternions q = [w, x, y, z] with scalar-first convention (common in many librar
 
 ## Time
 Discrete fixed timestep dt by default; events (failures) logged with simulation time t.
+
+## Integration
+- Translation: Euler-Cromer
+- Time: fixed dt, events logged by simulation time
+
+## Imports
+- Internal modules use absolute imports from package root when running with PYTHONPATH=.

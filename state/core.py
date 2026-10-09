@@ -40,3 +40,8 @@ class State:
             force_total=self.force_total.copy(),
             moment_total=self.moment_total.copy(),
         )
+
+    def sync_from_mass(self, mass_model) -> None:
+        self.dry_mass_kg = float(getattr(mass_model, "dry_mass_kg", self.dry_mass_kg))
+        self.fuel_kg = float(getattr(mass_model, "fuel_kg", self.fuel_kg))
+        self.mass_kg = float(getattr(mass_model, "total_mass", lambda: self.dry_mass_kg + self.fuel_kg)())
