@@ -70,3 +70,20 @@ Or double-click the files in Finder.
 - Coordinate frame: ENU-like (X East, Y North, Z Up). See `docs/conventions.md`.
 - Time: fixed dt; reproducible via seeds.
 - Separation: true state, raw sensor readings, filtered estimates kept distinct.
+
+## 3D Visual Simulation (matplotlib)
+
+Start the interactive 3D view (uses real simulation data):
+
+```bash
+cd selflanding_rocket
+PYTHONPATH=. python3 visual_app.py
+```
+
+Features:
+- 3D scene: ground plane, coordinate axes (X red, Y blue, Z green), rocket marker, flight trail
+- Uses actual State history from simulation (no fabricated trajectory)
+- Controls: Pause/Play, Restart
+- HUD: simulation time t [s], height h [m], speed v [m/s]
+
+Notes: Rotation is stored in state but not actively integrated in current dynamics loop – shown as orientation placeholder not animated; trajectory is true translation from physics. No control/autoland logic is simulated.
