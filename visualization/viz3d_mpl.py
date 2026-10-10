@@ -4,7 +4,6 @@ Simple 3D visualization using matplotlib (available).
 Shows: ground, axes, rocket (small marker), trajectory trail.
 Uses actual simulation history (no made-up data).
 """
-import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -14,7 +13,6 @@ from matplotlib.widgets import Button
 class SimpleRocketViz3D:
     def __init__(self, history):
         self.history = history
-        self.idx = 0
         self.paused = False
         self.fig = plt.figure(figsize=(10, 6))
         self.ax = self.fig.add_subplot(111, projection='3d')
@@ -35,10 +33,8 @@ class SimpleRocketViz3D:
         self.ax.set_xlim(xmin, xmax)
         self.ax.set_ylim(ymin, ymax)
         self.ax.set_zlim(0, max(1.0, zmax))
-        # ground
         xx, yy = np.meshgrid([xmin, xmax], [ymin, ymax])
         self.ax.plot_surface(xx, yy, np.zeros_like(xx), alpha=0.2, color='green')
-        # axes
         self.ax.quiver(xmin, ymin, 0, (xmax-xmin)*0.3, 0, 0, color='r', label='X')
         self.ax.quiver(xmin, ymin, 0, 0, (ymax-ymin)*0.3, 0, color='b', label='Y')
         self.ax.quiver(xmin, ymin, 0, 0, 0, max(1,zmax)*0.3, color='g', label='Z')
@@ -52,7 +48,6 @@ class SimpleRocketViz3D:
         self.time_text = self.ax.text2D(0.02, 0.98, '', transform=self.ax.transAxes, va='top')
         self.h_text = self.ax.text2D(0.02, 0.94, '', transform=self.ax.transAxes, va='top')
         self.v_text = self.ax.text2D(0.02, 0.90, '', transform=self.ax.transAxes, va='top')
-        # buttons
         axplay = plt.axes([0.7, 0.02, 0.08, 0.04])
         self.bplay = Button(axplay, 'Pause' if not self.paused else 'Play')
         self.bplay.on_clicked(self.toggle)
@@ -72,10 +67,9 @@ class SimpleRocketViz3D:
             self.paused = True
 
     def restart(self, event=None):
-        self.idx = 0
+        self.update(0)
         if self.paused:
             self.toggle()
-        self.update(0)
 
     def update(self, frame):
         if frame < len(self.history):
@@ -107,7 +101,3 @@ def run_visual():
     hist = sim.run(s.copy(), m)
     viz = SimpleRocketViz3D(hist)
     viz.show()
-
-
-if __name__ == '__main__':
-    run_visual()
