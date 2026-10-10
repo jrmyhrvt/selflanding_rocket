@@ -9,16 +9,42 @@ Modular 3D rocket simulation focused on:
 
 ## Quickstart
 
+Run simulation (generates CSV + plots in `output/`):
+
 ```bash
-pip install -e .
-python main.py
+cd selflanding_rocket
+PYTHONPATH=. python3 main.py
+```
+
+Or use the analysis entrypoint:
+
+```bash
+cd selflanding_rocket
+PYTHONPATH=. python3 run_analysis.py --tf 2.0 --dt 0.01
 ```
 
 Run tests:
 
 ```bash
-pytest -v
+cd selflanding_rocket
+PYTHONPATH=. python3 -m pytest -v
 ```
+
+## Output files
+
+After running `main.py`, files are written to `output/`:
+- `trajectory.csv` – true simulation state over time (t, pos/vel/acc, q, omega/alpha, mass/fuel, forces/moments)
+- `summary.json` – basic summary (t0/tf/dt, positions/velocities/masses/heights)
+- `height.png`, `velocity.png` – time series plots
+
+## View plots
+
+The PNG files are saved locally. On macOS you can open them with:
+```bash
+open output/height.png
+open output/velocity.png
+```
+Or double-click the files in Finder.
 
 ## Architecture
 
@@ -31,15 +57,16 @@ pytest -v
 - `estimator/` – state estimation
 - `system_logic/` – monitoring, plausibility, modes
 - `simulation/` – time loop & orchestration
-- `visualization/` – 3D + telemetry plots
-- `evaluation/` – metrics & reports
+- `visualization/` – 2D time plots (+ animation notes)
+- `evaluation/` – CSV export, metrics & reports
 - `tests/` – unit/integration tests
 - `docs/` – model docs, assumptions
 - `data/` – reference/test data
+- `output/` – generated results (CSV/JSON/PNG)
 
 ## Conventions
 
 - Units: SI (meters, kg, s, rad, N, Pa). See `config/units.py`.
-- Coordinate frame: ENU-like local vertical frame for simplicity (X East, Y North, Z Up). Documented in `docs/conventions.md`.
-- Time: fixed or configurable dt; reproducible via seeds.
-- Separation: true state, raw sensor readings, filtered estimates are kept distinct.
+- Coordinate frame: ENU-like (X East, Y North, Z Up). See `docs/conventions.md`.
+- Time: fixed dt; reproducible via seeds.
+- Separation: true state, raw sensor readings, filtered estimates kept distinct.
