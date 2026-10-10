@@ -16,3 +16,7 @@ def plot_pos(history, path="data/pos.png"):
     plt.tight_layout()
     plt.savefig(path)
     plt.close()
+
+
+# keep existing; also expose helpers
+from .timeplots import plot_height, plot_velocity, plot_position_components
