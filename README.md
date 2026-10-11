@@ -48,3 +48,12 @@ View plots: `open output/height.png` (macOS) or open in Finder.
 
 ## Architecture
 (see existing structure; visualization now includes `viz3d_mpl.py` + `visual_app.py`)
+
+## Landing 3D Visual (Lernversion)
+
+```bash
+cd selflanding_rocket
+PYTHONPATH=. python3 landing_app.py
+```
+
+Features: Zielpunkt (X,Y) per Slider änderbar, Start/Pause/Neustart, Anzeige t/h/v/dist(Ziel). Nutzt echte Simulationsdaten. Steuerung/Landung nicht implementiert (klar gekennzeichnet).
