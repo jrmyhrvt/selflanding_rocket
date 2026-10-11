@@ -37,7 +37,7 @@ class CtrlViz3D:
         xmin=min(xmin,self.target[0]-2); xmax=max(xmax,self.target[0]+2); ymin=min(ymin,self.target[1]-2); ymax=max(ymax,self.target[1]+2)
         self.ax.set_xlim(xmin,xmax); self.ax.set_ylim(ymin,ymax); self.ax.set_zlim(0,max(1,zmax))
         xx,yy=np.meshgrid([xmin,xmax],[ymin,ymax]); self.ax.plot_surface(xx,yy,np.zeros_like(xx),alpha=0.2,color='green')
-        self.ax.quiver(xmin,ymin,0,(xmax-xmin)*0.25,0,0,'r'); self.ax.quiver(xmin,ymin,0,0,(ymax-ymin)*0.25,0,'b'); self.ax.quiver(xmin,ymin,0,0,0,max(1,zmax)*0.25,'g')
+        self.ax.quiver(xmin,ymin,0,(xmax-xmin)*0.25,0,0,color='r'); self.ax.quiver(xmin,ymin,0,0,(ymax-ymin)*0.25,0,color='b'); self.ax.quiver(xmin,ymin,0,0,0,max(1,zmax)*0.25,color='g')
         self.ax.set_title('Autoland (learning): real sim data; controller NOT coupled by default')
         self.trail,=self.ax.plot(xs[:1],ys[:1],zs[:1],'k-',alpha=0.4); self.rock,=self.ax.plot(xs[0:1],ys[0:1],zs[0:1],'ro',ms=6)
         self.tpt,=self.ax.plot([self.target[0]],[self.target[1]],[0],'bx',ms=10,label='Target')
