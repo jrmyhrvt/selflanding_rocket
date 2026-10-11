@@ -57,3 +57,12 @@ PYTHONPATH=. python3 landing_app.py
 ```
 
 Features: Zielpunkt (X,Y) per Slider änderbar, Start/Pause/Neustart, Anzeige t/h/v/dist(Ziel). Nutzt echte Simulationsdaten. Steuerung/Landung nicht implementiert (klar gekennzeichnet).
+
+## Autoland (Learning Prototype)
+
+Landing-oriented 3D view (controller not yet coupled to sim):
+```bash
+cd selflanding_rocket
+PYTHONPATH=. python3 landing_ctrl_app.py
+```
+Interfaces: `system_logic.target.Target`, `physics.controller.LandingController` (placeholders). See `docs/autoland_design.md`.
