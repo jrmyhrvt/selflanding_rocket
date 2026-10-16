@@ -310,3 +310,46 @@ keeps the old gravity-only behaviour unchanged.
 Landing evaluation (`evaluation/landing.py`): `LANDED` requires ground contact
 within tolerance AND total speed `<= 0.5 m/s` AND horizontal distance to the
 target `<= 1.0 m`. See `docs/autoland_design.md`.
+
+## Unified 3D flight simulation (translation + rotation in ONE run)
+
+The joint simulation: position, velocity, orientation and angular velocity in a
+single, consistent run. Forces act on translation, moments on rotation, and the
+orientation couples the two (the gimbaled thrust direction is rotated by the
+same `q`). This is the answer to the old "uncontrolled rotation" demo: the
+nozzle is a REAL actuator, not an independent sine.
+
+```bash
+cd selflanding_rocket
+PYTHONPATH=. python3 flight_sim_app.py
+```
+
+What you get in ONE view:
+- 3D rocket body + movable nozzle (gimbal command comes from the physics).
+- World axes and the rocket body axes (X red, Y blue, Z green).
+- Labeled vectors: `v`, `a`, `F_Schub`, `F_Schwerkraft`, `F_gesamt`.
+- Controls: **Start**, **Pause/Weiter**, **Neustart**, time step `dt` text box,
+  and a mode selector: **Aufrecht** vs **Geneigt (15 Grad)** — both run the SAME
+  shared simulation, only the starting attitude differs.
+- Live telemetry panel + plots (height, velocity/acceleration, rotation/gimbal):
+  time, position X/Y/Z + height, velocity (incl. horizontal speed `|v_h|`) +
+  acceleration, orientation (quaternion + roll/pitch/yaw) + angular
+  velocity/acceleration, dry / fuel / total mass, EVERY computed force with
+  magnitude, direction and application point, the resultant force, the moment
+  and the angular acceleration.
+- The controller holds attitude AND drives the horizontal velocity to
+  `vh_des` (default 0), so a "Geneigt" start damps its side drift instead of
+  drifting away; set `kv_vh=0` for the old attitude-only behaviour.
+- Explicitly labelled as NOT modelled: drag/aerodynamics, real engine and real
+  attitude control (the controller is a documented learning model).
+
+Physics/frames: inertial frame is ENU (z up); body frame has `+Z` along the
+rocket long axis; `q = [w,x,y,z] = q_{B->I}`; `omega_b/alpha_b/M_b` are
+body-frame. See `docs/3d_flight_simulation.md` for the full contract.
+
+Root cause of the previous uncontrolled rotation (documented): the rotation was
+never part of the flight, but a decoupled demo with a permanently applied
+constant body moment and no damping -> linear `omega` growth (spin-up). Fixed by
+the unified model, where the moment comes from a bounded gimbaled thrust and the
+attitude dynamics are driven by a (clearly labelled) model controller instead of
+an arbitrary constant torque.
