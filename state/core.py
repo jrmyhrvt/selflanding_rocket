@@ -14,6 +14,9 @@ class State:
     q: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0]))
     omega: np.ndarray = field(default_factory=lambda: np.zeros(3))  # angular vel
     alpha: np.ndarray = field(default_factory=lambda: np.zeros(3))  # angular acc
+    # body-frame rotation (separate, backward compatible)
+    omega_b: np.ndarray = field(default_factory=lambda: np.zeros(3))  # angular vel in body frame
+    alpha_b: np.ndarray = field(default_factory=lambda: np.zeros(3))  # angular acc in body frame
     # mass
     mass_kg: float = 0.0
     fuel_kg: float = 0.0
@@ -23,6 +26,15 @@ class State:
     # forces/moments (optional)
     force_total: np.ndarray = field(default_factory=lambda: np.zeros(3))
     moment_total: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    # Thrust/nozzle telemetry (only filled by the unified flight model).
+    # FORCE direction: inertial frame. MOMENT direction: body frame.
+    thrust_N: float = 0.0
+    gimbal_x: float = 0.0
+    gimbal_y: float = 0.0
+    force_thrust: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    force_gravity: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    thrust_dir_b: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 1.0]))
+    modeled_thrust: bool = False
 
     def copy(self) -> "State":
         return State(
@@ -33,12 +45,21 @@ class State:
             q=self.q.copy(),
             omega=self.omega.copy(),
             alpha=self.alpha.copy(),
+            omega_b=self.omega_b.copy(),
+            alpha_b=self.alpha_b.copy(),
             mass_kg=self.mass_kg,
             fuel_kg=self.fuel_kg,
             dry_mass_kg=self.dry_mass_kg,
             height_m=self.height_m,
             force_total=self.force_total.copy(),
             moment_total=self.moment_total.copy(),
+            thrust_N=self.thrust_N,
+            gimbal_x=self.gimbal_x,
+            gimbal_y=self.gimbal_y,
+            force_thrust=self.force_thrust.copy(),
+            force_gravity=self.force_gravity.copy(),
+            thrust_dir_b=self.thrust_dir_b.copy(),
+            modeled_thrust=self.modeled_thrust,
         )
 
     def sync_from_mass(self, mass_model) -> None:

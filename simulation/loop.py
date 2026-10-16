@@ -2,6 +2,18 @@ from dataclasses import dataclass
 import numpy as np
 from state.core import State
 from physics.translation import Translation
+try:
+    from physics.rotation import integrate_rotation, integrate_rotation_body
+except Exception:  # pragma: no cover
+    def integrate_rotation(state, dt):
+        return state
+
+    def integrate_rotation_body(state, dt, rb=None):
+        return state
+try:
+    from physics.rigidbody import RigidBody
+except Exception:  # pragma: no cover
+    RigidBody = None
 from atmosphere import isa
 from mass_model.mass import MassModel
 from config import units
@@ -18,6 +30,10 @@ class SimConfig:
     # Ground handling is OPT-IN so the default behaviour stays unchanged.
     stop_at_ground: bool = False
     ground_z: float = 0.0
+    # Rotation integration is OPT-IN (default False) to preserve existing behavior.
+    integrate_rotation: bool = False
+    integrate_rotation_body: bool = False
+    rigid_body: object = None
 
 
 class Simulator:
@@ -34,8 +50,9 @@ class Simulator:
       - When `guidance is None` the behaviour is exactly the historical one
         (gravity only), so existing tests/behaviour are preserved.
 
-    Limitations: point mass, no thrust limits, no attitude/rotation coupling,
-    no engine model. NOT a realistic rocket model.
+    Limitations: point mass, no thrust limits, no attitude/rotation coupling
+      in the legacy sense; rotation can be integrated optionally.
+    NOT a realistic rocket model.
     """
 
     def __init__(self, cfg: SimConfig = None, monitor: Monitor = None, guidance=None):
@@ -70,6 +87,16 @@ class Simulator:
                 forces = forces + mass.total_mass() * a_cmd
 
             self.trans.step(state, forces, mass.total_mass())
+
+            # Ensure at most one rotation integrator is active (opt-in).
+            # If both are True, the body-frame path takes precedence.
+            rot_legacy = getattr(self.cfg, "integrate_rotation", False)
+            rot_body = getattr(self.cfg, "integrate_rotation_body", False)
+            if rot_body:
+                rb = getattr(self.cfg, "rigid_body", None)
+                integrate_rotation_body(state, self.cfg.dt, rb=rb)
+            elif rot_legacy:
+                integrate_rotation(state, self.cfg.dt)
 
             if self.monitor is not None:
                 self.monitor.check_plausible(state)

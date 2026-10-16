@@ -21,6 +21,7 @@ from state.core import State
 from mass_model.mass import MassModel
 from simulation.loop import Simulator, SimConfig
 from physics.controller import LandingController
+from physics.rigidbody import RigidBody
 
 
 DEFAULT_START_HEIGHT_M = 25.0
@@ -104,3 +105,32 @@ def run_scenario(scenario: Scenario) -> list:
     """Ideal reference run: controller sees the true state (no sensors)."""
     ctrl = LandingController(descent_speed_m_s=scenario.descent_speed_m_s)
     return run_scenario_with(scenario, ctrl)
+
+
+# ---------------------------------------------------------------- rotation demo
+ROTATION_DEMO_MOMENT_BODY = (2.0, 0.0, 0.0)  # N*m, body-frame (learning demo)
+ROTATION_DEMO_I_DIAG = (1.0, 2.0, 3.0)       # kg*m^2, diagonal inertia
+
+
+def run_rotation_demo(moment_body=ROTATION_DEMO_MOMENT_BODY,
+                      tf: float = 2.0, dt: float = 0.02,
+                      I_diag=ROTATION_DEMO_I_DIAG,
+                      start_height_m: float = 5.0) -> list:
+    """Pure rotation history (no translation dynamics, no gravity).
+
+    Uses the existing rigid-body physics (RigidBody + integrate_rotation_body)
+    through the Simulator's opt-in rotation flag. Kept separate from the landing
+    scenario; does NOT touch controller or scenario defaults.
+    """
+    rb = RigidBody(mass_kg=DEFAULT_DRY_MASS_KG, I_diag=list(I_diag))
+    state = State(
+        pos=np.array([0.0, 0.0, float(start_height_m)]),
+        q=np.array([1.0, 0.0, 0.0, 0.0]),
+        omega_b=np.zeros(3),
+        moment_total=np.asarray(moment_body, dtype=float),
+    )
+    cfg = SimConfig(tf=tf, dt=dt, gravity=False,
+                    integrate_rotation_body=True, rigid_body=rb)
+    sim = Simulator(cfg)
+    mass = MassModel(dry_mass_kg=DEFAULT_DRY_MASS_KG, fuel_kg=0.0)
+    return sim.run(state, mass)

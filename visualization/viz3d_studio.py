@@ -16,20 +16,34 @@ Features
     landing result of the whole run, and time-series plots (height, speed,
     distance vs time).
   - Current-frame values and whole-run results are clearly labelled.
+  - A 3D rocket (nose + cylindrical body) with a separate engine nozzle bell.
+    In "Rotation" mode the nozzle shows a purely VISUAL gimbal demo (no engine
+    or thrust model exists).
 
 NOT for real hardware. No real-rocket control.
 """
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib.widgets import Button, TextBox
+from matplotlib.widgets import Button, TextBox, RadioButtons
 
-from simulation.scenario import Scenario, run_scenario
+from simulation.scenario import Scenario, run_scenario, run_rotation_demo
 from evaluation import landing as landing_eval
+from visualization.rocket_body import (
+    rocket_geometry, nozzle_geometry, transform_points, rotate_about_axis,
+    body_axis_world, nozzle_axis_world)
+
+ROCKET_LENGTH_M = 1.0
+NOZZLE_LENGTH_M = 0.26
+GIMBAL_AMP_RAD = np.deg2rad(20.0)
+GIMBAL_PERIOD_S = 2.0
+MODE_LANDING = "Landung"
+MODE_ROTATION = "Rotation"
 
 
 class LandingStudio:
-    def __init__(self, scenario: Scenario = None, max_display_frames: int = 1200):
+    def __init__(self, scenario: Scenario = None, max_display_frames: int = 1200,
+                 history: list = None):
         self.scenario = scenario or Scenario()
         self.max_time_s = self.scenario.max_time_s  # not exposed in the UI
         self.max_display_frames = max_display_frames
@@ -39,6 +53,7 @@ class LandingStudio:
         self.frame = 0
         self.paused = True
         self.ani = None
+        self.mode = MODE_LANDING
 
         # cached per-run arrays
         self._t = self._z = self._vz = self._vxy = self._dist = None
@@ -54,7 +69,11 @@ class LandingStudio:
         self._build_controls()
         self._build_3d_scene()
         self._build_series()
-        self.run_simulation()  # initial run with default scenario
+        if history is not None:
+            # Adopt an already computed history; do NOT run/overwrite it.
+            self._adopt_history(history, self.scenario.target())
+        else:
+            self.run_simulation()  # initial run with default scenario
 
     # ------------------------------------------------------------------ UI
     def _build_figure(self):
@@ -103,6 +122,13 @@ class LandingStudio:
         self.b_reset.on_clicked(self._on_reset)
         self.b_recompute.on_clicked(self._on_recompute)
 
+        # Mode selector: "Landung" (default, unchanged) vs. "Rotation" demo.
+        ax_mode = self.fig.add_axes([0.05, 0.225, 0.14, 0.06])
+        self.mode_radio = RadioButtons(ax_mode, (MODE_LANDING, MODE_ROTATION),
+                                       active=0)
+        self.mode_radio.on_clicked(self._on_mode_change)
+        self.fig.text(0.05, 0.29, "Modus", fontsize=8)
+
     def _on_submit(self, _text):
         self._message = "Einstellungen geaendert - 'Neu berechnen' druecken."
         self.msg.set_text(self._message)
@@ -115,13 +141,64 @@ class LandingStudio:
         self._ground = None
         self._axes_arrows = []
         self.trail, = self.ax3d.plot([], [], [], "k-", alpha=0.5, lw=1.2)
-        self.rock, = self.ax3d.plot([], [], [], "ro", ms=6)
+
+        # 3D rocket: separate body and engine-nozzle geometries.
+        self.body_verts, self.body_faces = rocket_geometry(length=ROCKET_LENGTH_M)
+        self.nozzle_verts, self.nozzle_faces = nozzle_geometry(length=NOZZLE_LENGTH_M)
+        self._body_world = transform_points(self.body_verts, [1, 0, 0, 0], np.zeros(3))
+        self._nozzle_world = transform_points(self.nozzle_verts, [1, 0, 0, 0], np.zeros(3))
+        self.gimbal_angle = 0.0
+        self.body_poly = self._make_poly(self._body_world, self.body_faces,
+                                         color="#c8ccd2", edge="#5a5f66")
+        self.nozzle_poly = self._make_poly(self._nozzle_world, self.nozzle_faces,
+                                           color="#6b7078", edge="#2f3338")
         self.tpt, = self.ax3d.plot([], [], [], "bx", ms=12, mew=2, label="Ziel")
         self.ax3d.legend(loc="upper left")
+        self.joint_text = self.ax3d.text2D(0.02, 0.86, "",
+                                           transform=self.ax3d.transAxes,
+                                           va="top", fontsize=8, color="darkgreen")
         self.live = self.ax3d.text2D(0.02, 0.98, "", transform=self.ax3d.transAxes,
                                      va="top", fontsize=9, family="monospace")
         self.final = self.ax3d.text2D(0.98, 0.98, "", transform=self.ax3d.transAxes,
                                       va="top", ha="right", fontsize=9, color="darkred")
+
+    def _make_poly(self, world_verts, faces, color, edge):
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+        polys = [world_verts[list(f)] for f in faces]
+        coll = Poly3DCollection(polys, facecolor=color, edgecolor=edge,
+                                linewidths=0.4, alpha=1.0)
+        self.ax3d.add_collection3d(coll)
+        return coll
+
+    def _update_rocket(self, q, pos, gimbal_angle):
+        """Update body + nozzle geometry for the given frame (world coords)."""
+        self.gimbal_angle = float(gimbal_angle)
+        self._body_world = transform_points(self.body_verts, q, pos)
+        nozzle_body = rotate_about_axis(self.nozzle_verts, (0.0, 1.0, 0.0),
+                                        gimbal_angle, origin=(0.0, 0.0, 0.0))
+        self._nozzle_world = transform_points(nozzle_body, q, pos)
+        self.body_poly.set_verts([self._body_world[list(f)] for f in self.body_faces])
+        self.nozzle_poly.set_verts([self._nozzle_world[list(f)] for f in self.nozzle_faces])
+
+    def rocket_tip_world(self):
+        """World position of the nose tip (for tests / programmatic use)."""
+        return self._body_world[-2].copy()
+
+    def body_world(self):
+        """Current world vertices of the rocket body (for tests)."""
+        return self._body_world.copy()
+
+    def nozzle_world(self):
+        """Current world vertices of the engine nozzle (for tests)."""
+        return self._nozzle_world.copy()
+
+    def body_axis_world(self):
+        """Current world direction of the rocket long axis (base -> tip)."""
+        return body_axis_world(self._q[self.frame])
+
+    def nozzle_axis_world(self):
+        """Current world direction of the nozzle axis (with demo gimbal)."""
+        return nozzle_axis_world(self._q[self.frame], self.gimbal_angle)
 
     def _reconfigure_3d(self, target):
         xmin = float(min(self._x.min(), target[0])) - 2.0
@@ -146,6 +223,8 @@ class LandingStudio:
         self._axes_arrows.append(self.ax3d.quiver(xmin, ymin, 0, 0, 0, zmax * 0.2, color="g"))
         self.tpt.set_data([target[0]], [target[1]])
         self.tpt.set_3d_properties([0.0])
+        # better camera view
+        self.ax3d.view_init(elev=25.0, azim=135.0)
 
     # -------------------------------------------------------- time series
     def _build_series(self):
@@ -167,7 +246,8 @@ class LandingStudio:
         self.dline, = self.ax_d.plot([], [], "r-", alpha=0.6, lw=1.0)
         self.dmark, = self.ax_d.plot([], [], "ro", ms=6)
         self.ax_v.legend(loc="upper right", fontsize=7)
-        self._artists = (self.trail, self.rock, self.live, self.final,
+        self._artists = (self.trail, self.body_poly, self.nozzle_poly,
+                         self.live, self.final, self.joint_text,
                          self.hmark, self.vmark, self.dmark)
 
     # ------------------------------------------------------------- running
@@ -207,11 +287,65 @@ class LandingStudio:
         self.update(0)
         return self.result
 
+    def _adopt_history(self, history, target):
+        """Display an already computed history (no scenario run, no overwrite)."""
+        self.history = list(history)
+        self.result = landing_eval.evaluate_landing(self.history, np.asarray(target, float))
+        self.frame = 0
+        self._cache_arrays()
+        self._reconfigure_3d(np.asarray(target, float))
+        self._reset_series_axes()
+        self._message = (f"Vorhandene History geladen: {len(self.history)} Schritte, "
+                         f"Ergebnis {self.result['status']}.")
+        self.msg.set_text(self._message)
+        self._make_animation()
+        self.update(0)
+        return self.result
+
+    # ------------------------------------------------------ rotation demo mode
+    def _on_mode_change(self, label):
+        if label == MODE_ROTATION:
+            self.mode = MODE_ROTATION
+            self._load_rotation_mode()
+        else:
+            self.mode = MODE_LANDING
+            self.run_simulation()
+
+    def _load_rotation_mode(self):
+        """Load the virtual rotation demo (separate from the landing run).
+
+        This is a VISUAL DEMO ONLY: we give the nozzle a simple, periodic
+        gimbal (sine) to make the relative motion clearly visible. There is no
+        claim that this models a real engine/thrust/nozzle controller.
+        """
+        hist = run_rotation_demo()
+        self._adopt_history(hist, self.scenario.target())
+        self._frame_rotation_camera()
+        self._message = (f"Rotations-Demo (visuelle Gimbal-Demo): {len(hist)} Schritte.")
+        self.msg.set_text(self._message)
+        return self.result
+
+    def _frame_rotation_camera(self):
+        """Zoom the 3D view onto the (nearly stationary) rotating rocket."""
+        cx = float(np.mean(self._x))
+        cy = float(np.mean(self._y))
+        cz = float(np.mean(self._z))
+        span = ROCKET_LENGTH_M * 1.6
+        self.ax3d.set_xlim(cx - span, cx + span)
+        self.ax3d.set_ylim(cy - span, cy + span)
+        self.ax3d.set_zlim(cz - span, cz + span)
+        self.ax3d.view_init(elev=18.0, azim=-60.0)
+        try:
+            self.ax3d.set_box_aspect((1.0, 1.0, 1.0))
+        except Exception:
+            pass
+
     def _cache_arrays(self):
         self._x = np.array([s.pos[0] for s in self.history])
         self._y = np.array([s.pos[1] for s in self.history])
         self._z = np.array([s.height_m for s in self.history])
         self._t = np.array([s.t for s in self.history])
+        self._q = np.array([np.asarray(s.q, dtype=float) for s in self.history])
         self._vz = np.array([s.vel[2] for s in self.history])
         self._vxy = np.array([float(np.hypot(s.vel[0], s.vel[1])) for s in self.history])
         tx, ty = self.scenario.target_xy
@@ -260,6 +394,8 @@ class LandingStudio:
         if not self.history:
             self.live.set_text("kein Versuch")
             self.final.set_text("")
+            if getattr(self, "joint_text", None) is not None:
+                self.joint_text.set_text("")
             return
         f = self.frame
         last = len(self.history) - 1
@@ -280,14 +416,20 @@ class LandingStudio:
         if r:
             self._result_text = (
                 f"{tag}\n"
-                f"Status: {r['status']}\n"
-                f"v_ende = {r['v_mag']:.2f} m/s\n"
-                f"dist   = {r['dist_xy']:.2f} m\n"
-                f"Kontakt: {'ja' if r.get('contact') else 'nein'}"
+                f"Status   = {r['status']}\n"
+                f"Kontakt  = {'ja' if r.get('contact') else 'nein'}\n"
+                f"Treffer  = {'ja' if r.get('on_target') else 'nein'}\n"
+                f"Abstand  = {r.get('dist_xy', float('nan')):.2f} m\n"
+                f"Geschw.  = {r.get('v_mag_contact', float('nan')):.2f} m/s"
             )
         else:
             self._result_text = tag
         self.final.set_text(self._result_text)
+        if getattr(self, "joint_text", None) is not None:
+            ang = np.rad2deg(self.gimbal_angle)
+            self.joint_text.set_text(
+                f"Düse (visuelle Demo): Gimbal {ang:+.1f}°\n"
+                "Triebwerk: KEIN Schubmodell")
 
     def update(self, frame):
         if not self.history:
@@ -296,8 +438,10 @@ class LandingStudio:
         self.frame = frame
         self.trail.set_data(self._x[:frame + 1], self._y[:frame + 1])
         self.trail.set_3d_properties(self._z[:frame + 1])
-        self.rock.set_data([self._x[frame]], [self._y[frame]])
-        self.rock.set_3d_properties([self._z[frame]])
+        q = self._q[frame]
+        pos = np.array([self._x[frame], self._y[frame], self._z[frame]])
+        gimbal = GIMBAL_AMP_RAD * np.sin(2.0 * np.pi * self._t[frame] / GIMBAL_PERIOD_S) if self.mode == MODE_ROTATION else 0.0
+        self._update_rocket(q, pos, gimbal)
         t = self._t[frame]
         self.hmark.set_data([t], [self._z[frame]])
         self.vmark.set_data([t], [self._vxy[frame]])
@@ -334,7 +478,10 @@ class LandingStudio:
         self.play()
 
     def _on_recompute(self, _event=None):
-        self.run_simulation()
+        if self.mode == MODE_ROTATION:
+            self._load_rotation_mode()
+        else:
+            self.run_simulation()
         self.play()
 
     def _on_pause(self, _event=None):
