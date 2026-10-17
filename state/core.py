@@ -29,8 +29,17 @@ class State:
     # Thrust/nozzle telemetry (only filled by the unified flight model).
     # FORCE direction: inertial frame. MOMENT direction: body frame.
     thrust_N: float = 0.0
+    # gimbal_x / gimbal_y = ACTUAL servo angles (drive the physics).
     gimbal_x: float = 0.0
     gimbal_y: float = 0.0
+    # servo setpoints (controller/manual command) and actual servo rates.
+    # Setpoint != actual while the virtual servos are slewing/responding.
+    gimbal_x_cmd: float = 0.0
+    gimbal_y_cmd: float = 0.0
+    servo_rate_x: float = 0.0
+    servo_rate_y: float = 0.0
+    servo_sat_x: bool = False
+    servo_sat_y: bool = False
     force_thrust: np.ndarray = field(default_factory=lambda: np.zeros(3))
     force_gravity: np.ndarray = field(default_factory=lambda: np.zeros(3))
     thrust_dir_b: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 1.0]))
@@ -56,6 +65,12 @@ class State:
             thrust_N=self.thrust_N,
             gimbal_x=self.gimbal_x,
             gimbal_y=self.gimbal_y,
+            gimbal_x_cmd=self.gimbal_x_cmd,
+            gimbal_y_cmd=self.gimbal_y_cmd,
+            servo_rate_x=self.servo_rate_x,
+            servo_rate_y=self.servo_rate_y,
+            servo_sat_x=self.servo_sat_x,
+            servo_sat_y=self.servo_sat_y,
             force_thrust=self.force_thrust.copy(),
             force_gravity=self.force_gravity.copy(),
             thrust_dir_b=self.thrust_dir_b.copy(),

@@ -216,6 +216,112 @@ def test_moment_recorded_matches_thrust_geometry():
     assert np.allclose(st.moment_total, np.cross(r, F_b))
 
 
+# ---------------------------------------------------------------- TVC servos
+def test_servo_setpoint_and_actual_are_separated():
+    """The controller command is only a SETPOINT; the actual angle lags it."""
+    cfg = FlightConfig(tf=1.0, dt=0.01, start_q=_tilt_q(15.0),
+                       servo_tau_s=0.2, servo_rate_max_rad_s=0.5)
+    hist = run_flight(cfg)
+    # early in the run the servo has not reached the commanded setpoint yet
+    st = hist[2]
+    lag = max(abs(st.gimbal_x - st.gimbal_x_cmd),
+              abs(st.gimbal_y - st.gimbal_y_cmd))
+    assert lag > 1e-4
+    # and the setpoint itself is a genuine command (tilt produces a command)
+    assert max(max(abs(s.gimbal_x_cmd), abs(s.gimbal_y_cmd)) for s in hist) > 1e-3
+
+
+def test_servo_actual_angle_never_exceeds_limit():
+    cfg = FlightConfig(tf=2.0, dt=0.01, use_controller=False,
+                       thrust_N_open=1000.0, gimbal_x_open=10.0,
+                       gimbal_y_open=-10.0, gimbal_max_rad=0.2)
+    hist = run_flight(cfg)
+    for s in hist:
+        assert abs(s.gimbal_x) <= 0.2 + 1e-12
+        assert abs(s.gimbal_y) <= 0.2 + 1e-12
+
+
+def test_controller_respects_servo_limits():
+    """The controller never commands/achieves more than the servo limit."""
+    cfg = FlightConfig(tf=5.0, dt=0.01, start_q=_tilt_q(15.0),
+                       start_vel=[8.0, -4.0, 0.0], gimbal_max_rad=0.1)
+    hist = run_flight(cfg)
+    for s in hist:
+        assert abs(s.gimbal_x) <= 0.1 + 1e-9
+        assert abs(s.gimbal_y) <= 0.1 + 1e-9
+        assert abs(s.gimbal_x_cmd) <= 0.1 + 1e-9
+        assert abs(s.gimbal_y_cmd) <= 0.1 + 1e-9
+
+
+def test_servo_rate_is_bounded_by_config():
+    dt = 0.01
+    cfg = FlightConfig(tf=1.0, dt=dt, use_controller=False, thrust_N_open=500.0,
+                       gimbal_x_open=0.3, servo_rate_max_rad_s=0.7)
+    hist = run_flight(cfg)
+    for s in hist:
+        assert abs(s.servo_rate_x) <= 0.7 + 1e-9
+        assert abs(s.servo_rate_y) <= 0.7 + 1e-9
+
+
+def test_manual_servo_x_moves_thrust_toward_negative_y():
+    """Servo X on the body: +gimbal_x tilts the thrust towards -F_b_y."""
+    cfg = FlightConfig(tf=0.5, dt=0.01, gravity=False, stop_at_ground=False,
+                       manual_servo=True, manual_thrust_N=1000.0,
+                       manual_gimbal_x_rad=0.3, manual_gimbal_y_rad=0.0,
+                       servo_rate_max_rad_s=100.0, servo_tau_s=0.0)
+    hist = run_flight(cfg)
+    st = hist[-1]
+    assert st.gimbal_x > 0.0
+    assert st.thrust_dir_b[1] < 0.0            # body thrust leans to -Y
+    assert st.moment_total[0] < 0.0            # M = r x F sign follows
+
+
+def test_manual_servo_y_moves_thrust_toward_positive_x():
+    cfg = FlightConfig(tf=0.5, dt=0.01, gravity=False, stop_at_ground=False,
+                       manual_servo=True, manual_thrust_N=1000.0,
+                       manual_gimbal_x_rad=0.0, manual_gimbal_y_rad=0.3,
+                       servo_rate_max_rad_s=100.0, servo_tau_s=0.0)
+    hist = run_flight(cfg)
+    st = hist[-1]
+    assert st.gimbal_y > 0.0
+    assert st.thrust_dir_b[0] > 0.0            # body thrust leans to +X
+
+
+def test_manual_servo_overrides_controller_and_keeps_hover_thrust():
+    m_g = (50.0 + 10.0) * 9.80665
+    base = FlightConfig(tf=0.2, dt=0.01, manual_servo=True,
+                        manual_thrust_N=0.0, manual_gimbal_x_rad=0.0,
+                        manual_gimbal_y_rad=0.0, use_controller=True)
+    hist = run_flight(base)
+    assert np.isclose(hist[0].thrust_N, m_g, rtol=1e-6)   # hover thrust
+    # the controller would tilt; manual keeps the setpoint at zero
+    assert np.allclose([s.gimbal_x_cmd for s in hist], 0.0, atol=1e-9)
+
+
+def test_servo_couples_force_and_moment_to_motion():
+    """The actual servo angle reaches the force AND the moment of the state."""
+    cfg = FlightConfig(tf=0.5, dt=0.01, gravity=False, stop_at_ground=False,
+                       manual_servo=True, manual_thrust_N=1000.0,
+                       manual_gimbal_x_rad=0.2, servo_tau_s=0.0,
+                       servo_rate_max_rad_s=100.0)
+    hist = run_flight(cfg)
+    st = hist[-1]
+    r = np.array([0.0, 0.0, -0.3])
+    F_b = st.thrust_N * np.asarray(st.thrust_dir_b, float)
+    assert np.allclose(st.moment_total, np.cross(r, F_b), atol=1e-9)
+    assert np.linalg.norm(st.omega_b) > 0.0            # moment rotated the body
+
+
+def test_telemetry_exposes_servo_setpoint_and_actual():
+    hist = run_flight(FlightConfig(tf=0.5, start_q=_tilt_q(15.0)))
+    d = flight_telemetry(hist[5], FlightConfig(tf=0.5))
+    for key in ("gimbal_x_rad", "gimbal_y_rad", "gimbal_x_cmd_rad",
+                "gimbal_y_cmd_rad", "servo_rate_x_rad_s", "servo_rate_y_rad_s",
+                "servo_x_saturated", "servo_y_saturated", "servo_manual"):
+        assert key in d
+    assert d["servo_manual"] is False
+
+
 def test_mass_and_fuel_burn_model_optional():
     # no isp -> constant mass
     hist = run_flight(FlightConfig(tf=1.0))
@@ -223,3 +329,73 @@ def test_mass_and_fuel_burn_model_optional():
     # with isp -> fuel decreases
     hist2 = run_flight(FlightConfig(tf=1.0, isp_s=250.0))
     assert hist2[-1].fuel_kg < hist2[0].fuel_kg
+
+
+# ---------------------------------------------------------------- position loop
+def _offset_cfg(**kw):
+    base = dict(tf=40.0, dt=0.02, start_pos=np.array([2.0, 0.0, 15.0]),
+                start_vel=np.zeros(3), vz_des_m_s=-0.4,
+                target_pos=np.array([0.0, 0.0, 0.0]))
+    base.update(kw)
+    return FlightConfig(**base)
+
+
+def test_position_loop_disabled_by_default_is_legacy():
+    """kp_xy = 0 (default) keeps the velocity-only behaviour EXACTLY."""
+    a = run_flight(FlightConfig(tf=10.0, dt=0.02,
+                                start_pos=np.array([2.0, 0.0, 15.0]),
+                                start_vel=np.zeros(3), vz_des_m_s=-0.4))
+    b = run_flight(FlightConfig(tf=10.0, dt=0.02,
+                                start_pos=np.array([2.0, 0.0, 15.0]),
+                                start_vel=np.zeros(3), vz_des_m_s=-0.4,
+                                target_pos=np.array([0.0, 0.0, 0.0]),
+                                kp_xy=0.0))
+    assert len(a) == len(b)
+    for sa, sb in zip(a, b):
+        assert np.allclose(sa.pos, sb.pos)
+        assert np.allclose(sa.vel, sb.vel)
+        assert np.allclose(sa.gimbal_x, sb.gimbal_x)
+
+
+def test_position_loop_removes_a_horizontal_offset():
+    """With a target and kp_xy > 0 the vehicle is driven back over the target."""
+    legacy = run_flight(_offset_cfg(kp_xy=0.0))
+    ctrl = run_flight(_offset_cfg(kp_xy=0.4))
+    assert abs(legacy[-1].pos[0]) > 1.0                # offset only damped
+    assert abs(ctrl[-1].pos[0]) < 0.2                  # driven back to target
+    assert abs(ctrl[-1].pos[0]) < abs(legacy[-1].pos[0])
+
+
+def test_position_loop_sign_is_correct_on_both_axes():
+    for x0, y0 in ((2.0, 0.0), (-2.0, 0.0), (0.0, 2.0), (0.0, -2.0)):
+        h = run_flight(_offset_cfg(start_pos=np.array([x0, y0, 15.0]),
+                                   kp_xy=0.4))
+        assert np.hypot(h[-1].pos[0], h[-1].pos[1]) < 0.2, (x0, y0)
+
+
+def test_horizontal_velocity_command_is_clamped_and_target_ward():
+    from simulation.flight import _horizontal_velocity_command
+    s = State(pos=np.array([100.0, -100.0, 5.0]), vel=np.zeros(3),
+              q=np.array([1.0, 0.0, 0.0, 0.0]))
+    cfg = FlightConfig(target_pos=np.zeros(3), kp_xy=1.0, vh_max_m_s=2.0)
+    vh = _horizontal_velocity_command(s, cfg)
+    assert np.linalg.norm(vh) <= 2.0 + 1e-9            # clamped
+    assert vh[0] < 0.0 and vh[1] > 0.0                 # points toward target
+    # kp_xy = 0 -> plain feed-forward
+    assert np.allclose(_horizontal_velocity_command(
+        s, FlightConfig(target_pos=np.zeros(3), kp_xy=0.0)), 0.0)
+
+
+def test_position_loop_does_not_add_horizontal_speed_at_touchdown():
+    h = run_flight(_offset_cfg(kp_xy=0.4))
+    assert np.hypot(h[-1].vel[0], h[-1].vel[1]) < 0.2
+
+
+def test_position_loop_with_noisy_observation_still_converges():
+    from sensors.observed import SensorConfig
+    from sensors.observed_flight import ObservedFlightController
+    from simulation.flight import model_control
+    ctrl = ObservedFlightController(
+        model_control, SensorConfig(pos_std_m=1.0, vel_std_m_s=0.3, seed=1234))
+    h = run_flight(_offset_cfg(kp_xy=0.4), controller=ctrl)
+    assert np.hypot(h[-1].pos[0], h[-1].pos[1]) < 0.6

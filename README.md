@@ -325,12 +325,29 @@ PYTHONPATH=. python3 flight_sim_app.py
 ```
 
 What you get in ONE view:
-- 3D rocket body + movable nozzle (gimbal command comes from the physics).
+- 3D rocket body + movable nozzle, rebuilt every frame from the real state
+  (position, orientation `q`, gimbal angles).
+- The body long axis vs. the ACTUAL thrust direction drawn as separate lines, so
+  the nozzle tilt (gimbal) is visible.
 - World axes and the rocket body axes (X red, Y blue, Z green).
-- Labeled vectors: `v`, `a`, `F_Schub`, `F_Schwerkraft`, `F_gesamt`.
+- Labeled vectors: `v`, `a`, `F_Schub`, `F_Schwerkraft`, `F_gesamt`, scaled by
+  their own magnitude (not by the rocket size) so they never hide the hull.
 - Controls: **Start**, **Pause/Weiter**, **Neustart**, time step `dt` text box,
   and a mode selector: **Aufrecht** vs **Geneigt (15 Grad)** — both run the SAME
   shared simulation, only the starting attitude differs.
+- **Virtual TVC servos**: two independent servos turn a commanded **setpoint**
+  into a rate-limited **actual** nozzle angle (angle limit `gimbal_max_rad`, max
+  slew rate `servo_rate_max_rad_s`, first-order `servo_tau_s`; see
+  `physics/servo.py`). Only the actual angle drives the thrust force AND moment.
+  A control switch **Auto (Regler)** / **Manuell (Servo)** plus two labeled
+  **Servo X** / **Servo Y** sliders let you test each servo by hand; moving a
+  slider recomputes the run and says so on screen (no silent reset). The status
+  panel shows the active mode and the setpoint vs. actual angle, the telemetry
+  separates them, and the 3D model draws both servo rotation axes at the joint.
+- View toggle **Gesamtansicht** (whole trajectory + forces) vs **Nahansicht**
+  (close-up that tracks the rocket). Interactive camera: left-drag = rotate,
+  right/middle-drag = pan, wheel / `+`-`-` = zoom, `o`/`c` = overview/close-up,
+  `r` = reset. The camera never jumps back on every frame.
 - Live telemetry panel + plots (height, velocity/acceleration, rotation/gimbal):
   time, position X/Y/Z + height, velocity (incl. horizontal speed `|v_h|`) +
   acceleration, orientation (quaternion + roll/pitch/yaw) + angular
@@ -353,3 +370,118 @@ constant body moment and no damping -> linear `omega` growth (spin-up). Fixed by
 the unified model, where the moment comes from a bounded gimbaled thrust and the
 attitude dynamics are driven by a (clearly labelled) model controller instead of
 an arbitrary constant torque.
+
+## Random-Szenario-Modus (100 zufällige Läufe)
+
+Runs a whole SERIES of randomly sampled, physically valid initial conditions
+through the SAME 3D physics (servos, thrust, moment, translation, rotation) and
+the SAME automatic controller, then assesses each landing with the existing
+criteria and writes statistics. The interactive `flight_sim_app.py` is untouched.
+
+```bash
+cd selflanding_rocket
+PYTHONPATH=. python3 random_scenario_app.py                    # 100 runs, headless
+PYTHONPATH=. python3 random_scenario_app.py --runs 50 --seed 1234
+PYTHONPATH=. python3 random_scenario_app.py --no-sensor        # controller sees the true state
+PYTHONPATH=. python3 random_scenario_app.py --estimator        # + low-pass estimate
+PYTHONPATH=. python3 random_scenario_app.py --visualize --seed 7   # ONE run live in 3D
+```
+
+`--runs 100` (default) opens **no** windows; `--visualize` shows a single
+sampled scenario in the existing 3D view instead of the series.
+
+### What is randomised (all configurable, see `RandomScenarioConfig`)
+- height `height_range_m`, horizontal start offset `offset_radius_m` (disc around
+  `target_center_xy`)
+- vertical velocity `v_vertical_range_m_s`, horizontal velocity per axis
+  `v_horizontal_range_m_s`
+- attitude: tilt angle `max_tilt_deg` about a random horizontal axis
+- body angular velocity per axis `max_omega_deg_s`
+- sensor noise `pos_std_m`, `vel_std_m_s`, `gyro_std_rad_s`, `dropout_prob`
+  (reuses the existing sensor classes)
+
+Every draw comes from one `numpy.random.default_rng`. With a fixed `--seed` the
+whole series is reproduced exactly; without a seed a random one is picked and
+REPORTED (stored in the JSON summary + every CSV row), so a run can always be
+re-run. A sampled state is always valid: finite values, unit quaternion (checked
+in code and in the tests).
+
+### Zielpunkt / horizontale Positionsregelung
+The 3D controller now has an outer **horizontal POSITION loop**: besides the sink
+rate it also uses the horizontal target deviation and the lateral velocity. Its
+horizontal setpoint is `vh_des + kp_xy*(target_xy - pos_xy)`, clamped to
+`vh_max_m_s` (`simulation/flight.py::_horizontal_velocity_command`). `kp_xy = 0`
+or no target reproduces the old velocity-only behaviour exactly.
+
+The landing target is the FIXED point `target_center_xy` at ground level (a real
+landing pad), so the random start offset is a genuine position error the loop must
+remove. It comes from the single source `target_point(cfg, ic)`, used by BOTH the
+controller and the evaluation, so the two can never disagree. Set
+`target_from_start=True` for the old "target = start position" convention (then
+`offset_radius_m` is inert, because the flat-earth dynamics are translation
+invariant).
+
+### Status / Fehlerursachen (mutually exclusive)
+| status | meaning | success |
+|---|---|---|
+| `LANDED` | soft touchdown (`v <= v_tol`) on target (`dist <= dist_tol`) | yes |
+| `TOO_FAST` | touched down but `v > v_tol` | no |
+| `OFF_TARGET` | touched down but horizontal dist > `dist_tol` | no |
+| `CONTROL_LOSS` | attitude envelope exceeded (max tilt / max rate > tolerance) | no |
+| `TIMEOUT` | run ended without ground contact (simulation limit) | no |
+| `NO_DATA` | empty run | no |
+
+`CONTROL_LOSS` takes precedence over everything else - a run that exceeded the
+attitude envelope is never counted as a successful landing. A run that ends
+airborne (`TIMEOUT`) is NEVER a success.
+
+### Output (`output/random_scenario/`, nothing else is overwritten)
+- `random_scenarios.csv` - one row per run: the FULL initial conditions
+  (`pos/vel/tilt/omega_b`, `target_x/y`) + the base `seed`, plus status,
+  `failure_cause`, contact, `n_steps`, `duration_s`, end height, touchdown speed,
+  target distance, max attitude deviation, max `|omega_b|`, estimate RMS errors
+  and missing samples. Enough to re-run any single run.
+- `random_summary.json` - the statistics below + the full config + the seed.
+- `random_distributions.png` - success/failure, status counts, and histograms of
+  touchdown speed / target distance / max attitude deviation / max `|omega_b|`
+  with the tolerance lines drawn in.
+
+### Statistik (aus `random_summary.json`)
+Success rate, per-status counts (= failure causes), touchdown-speed distribution
+(mean/median/std/min/max over contact runs), target distance, max attitude
+deviation, max angular rate and duration, plus the sensor/estimate metrics and
+the thresholds used.
+
+Result (defaults, 100 runs, seed 1234, sensor layer ON): the position loop takes
+`LANDED` from **18/100** (velocity-only, `kp_xy=0`) to **100/100**, and the target
+distance from mean `1.77 m` / max `4.50 m` down to mean `0.13 m` / max `0.32 m`,
+with the touchdown speed unchanged at mean `0.41` / max `0.47 m/s` (below the
+`0.5 m/s` limit). Honest limits: under large disturbances (tilt 30 deg, 200 deg/s,
+offset 4 m) it drops to 49/100 (`TOO_FAST`/`CONTROL_LOSS`); a commanded descent
+faster than `v_tol` (constant sink rate, no terminal flare) is always `TOO_FAST`.
+See `docs/random_scenario.md`.
+
+```
+Seed: 1234  |  Laeufe: 100  |  LANDED: 100  fehlgeschlagen: 0  (100%)
+Status: LANDED=100  TOO_FAST=0  OFF_TARGET=0  CONTROL_LOSS=0  TIMEOUT=0  NO_DATA=0
+Aufsetzgeschwindigkeit [m/s]: mean=0.41 median=0.41 max=0.47 (n=100)
+Zielabstand [m]: mean=0.13 max=0.32 (n=100)
+```
+*The other failure modes stay reachable and are covered by the tests: `TOO_FAST`
+with a low, fast start; `OFF_TARGET` with the position loop off (`kp_xy=0`);
+`CONTROL_LOSS` with a tight rate tolerance; `TIMEOUT` with a too-short `tf`.*
+
+### Descent-rate note
+The 3D controller tracks a CONSTANT desired sink rate `vz_des_m_s` (there is no
+terminal flush). For a soft touchdown under the default `v_tol = 0.5 m/s` the
+sink rate must be below that tolerance, so the random mode defaults to
+`vz_des_m_s = -0.4`. The interactive `flight_sim_app.py` keeps its own `-2.0`
+(fast-descent demo). Only a config parameter differs - the controller code is the
+same.
+
+### What this does NOT model
+Simplified virtual learning model: no drag/aerodynamics, no real engine, no real
+attitude controller, no attitude sensor (the observed state forwards the true
+orientation `q`; only position, velocity and body rate are measured/noisy), no
+fuel burn by default. The numbers describe how THIS simplified controller and
+these landing rules behave - they are **not** predictions about a real rocket.

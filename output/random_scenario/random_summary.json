@@ -1,0 +1,134 @@
+{
+  "config": {
+    "n_runs": 100,
+    "seed": 1234,
+    "height_range_m": [
+      5.0,
+      20.0
+    ],
+    "offset_radius_m": 1.5,
+    "target_center_xy": [
+      0.0,
+      0.0
+    ],
+    "target_from_start": false,
+    "v_vertical_range_m_s": [
+      -1.5,
+      0.5
+    ],
+    "v_horizontal_range_m_s": [
+      -0.5,
+      0.5
+    ],
+    "max_tilt_deg": 6.0,
+    "max_omega_deg_s": 20.0,
+    "dry_mass_kg": 50.0,
+    "fuel_kg": 10.0,
+    "I_diag": [
+      8.0,
+      8.0,
+      3.0
+    ],
+    "max_thrust_N": 4000.0,
+    "gimbal_max_rad": 0.35,
+    "gimbal_offset_m": 0.3,
+    "dt": 0.02,
+    "tf": 60.0,
+    "ground_z": 0.0,
+    "vz_des_m_s": -0.4,
+    "kv_vh": 0.6,
+    "max_tilt_control_deg": 20.0,
+    "kp_att": 4.0,
+    "kd_att": 3.5,
+    "kv_vz": 1.0,
+    "kp_xy": 0.4,
+    "vh_max_m_s": 2.0,
+    "sensor_enabled": true,
+    "pos_std_m": 1.0,
+    "vel_std_m_s": 0.3,
+    "gyro_std_rad_s": 0.0,
+    "dropout_prob": 0.0,
+    "estimator_enabled": false,
+    "estimator_alpha": 0.25,
+    "v_tol_m_s": 0.5,
+    "h_tol_m": 0.05,
+    "dist_tol_m": 1.0,
+    "attitude_dev_tol_deg": 60.0,
+    "omega_tol_deg_s": 720.0
+  },
+  "seed": 1234,
+  "n_runs": 100,
+  "success": {
+    "landed": 100,
+    "failed": 0,
+    "success_rate": 1.0
+  },
+  "status_counts": {
+    "LANDED": 100,
+    "TOO_FAST": 0,
+    "OFF_TARGET": 0,
+    "CONTROL_LOSS": 0,
+    "TIMEOUT": 0,
+    "NO_DATA": 0
+  },
+  "failure_causes": {
+    "TOO_FAST": 0,
+    "OFF_TARGET": 0,
+    "CONTROL_LOSS": 0,
+    "TIMEOUT": 0,
+    "NO_DATA": 0
+  },
+  "touchdown_speed_m_s": {
+    "n": 100,
+    "mean": 0.41406281394855815,
+    "median": 0.4121456913817331,
+    "std": 0.028276676637452983,
+    "min": 0.3277225978336939,
+    "max": 0.46934529001866093
+  },
+  "target_distance_m": {
+    "n": 100,
+    "mean": 0.12735149574956187,
+    "median": 0.11882118565510448,
+    "std": 0.06433785613955213,
+    "min": 0.01970231856854742,
+    "max": 0.3229330816675299
+  },
+  "max_attitude_dev_deg": {
+    "n": 100,
+    "mean": 4.498073413536414,
+    "median": 4.522459657585793,
+    "std": 1.4040384253826899,
+    "min": 1.7578120313458914,
+    "max": 8.31277742439256
+  },
+  "max_omega_deg_s": {
+    "n": 100,
+    "mean": 19.421041670333263,
+    "median": 19.478973069658736,
+    "std": 4.471399150049751,
+    "min": 7.430849933764597,
+    "max": 29.74866299481443
+  },
+  "duration_s": {
+    "n": 100,
+    "mean": 30.1252,
+    "median": 30.700000000000003,
+    "std": 10.256386349977268,
+    "min": 12.58,
+    "max": 49.86
+  },
+  "sensor": {
+    "enabled": true,
+    "mean_est_pos_rms_m": 1.7297452080854407,
+    "mean_est_vel_rms_m_s": 0.519326627825307,
+    "mean_samples_missing": 0.0
+  },
+  "thresholds": {
+    "v_tol_m_s": 0.5,
+    "h_tol_m": 0.05,
+    "dist_tol_m": 1.0,
+    "attitude_dev_tol_deg": 60.0,
+    "omega_tol_deg_s": 720.0
+  }
+}
